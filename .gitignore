@@ -1,0 +1,63 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 虚拟环境 =====
+# 本项目虚拟环境位于 backend/env/
+env/
+.venv/
+venv/
+ENV/
+
+# ===== 环境变量与密钥 =====
+# 忽略 .env（含真实 API Key），保留 .env.example 示例
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== 数据库与数据文件 =====
+# SQLite 数据库（运行时生成）
+# *.db
+# *.sqlite
+# *.sqlite3
+# *.db-journal
+# data/
+# backend/data/
+
+# ===== 日志 =====
+*.log
+logs/
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== 编辑器 / IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== Agent 工作区工具文件 =====
+# .agents/
+.tasks/

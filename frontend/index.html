@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>小说创作智能体</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app" v-cloak>
+    <header class="topbar">
+      <div class="brand"><span class="logo">📖</span> 小说创作智能体</div>
+      <button v-if="view === 'project'" class="btn ghost" @click="backToList">← 返回列表</button>
+    </header>
+
+    <!-- ============ 项目列表 ============ -->
+    <main v-if="view === 'list'" class="container">
+      <section class="card create-card">
+        <h2>开始一部新小说</h2>
+        <p class="hint">输入创意或一句话简介，系统会依次生成设定、大纲、章节规划与正文。</p>
+        <textarea v-model="newPremise" placeholder="例如：一个失去记忆的侦探，在追查一桩案件时发现自己正是凶手…"></textarea>
+        <div class="row">
+          <input v-model="newTitle" placeholder="书名（可选）" />
+          <button class="btn primary" @click="createProject" :disabled="creating">
+            {{ creating ? '创建中…' : '创建项目' }}
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <h2>我的项目</h2>
+        <div v-if="projects.length === 0" class="empty">还没有项目，先在上面创建一个吧。</div>
+        <div class="grid">
+          <div class="card project-card" v-for="p in projects" :key="p.id" @click="openProject(p.id)">
+            <div class="card-title">{{ p.title }}</div>
+            <div class="card-premise">{{ p.premise }}</div>
+            <span class="badge">{{ stageLabel(p.stage) }}</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============ 项目详情 ============ -->
+    <main v-else-if="view === 'project'" class="container">
+      <div class="project-head">
+        <div>
+          <h2>{{ project.title }}</h2>
+          <p class="premise">{{ project.premise }}</p>
+        </div>
+        <div class="row">
+          <span class="badge">{{ stageLabel(project.stage) }}</span>
+          <button class="btn ghost" @click="exportMarkdown">导出 Markdown</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button
+          v-for="t in tabs" :key="t.key"
+          :class="['tab', { active: activeTab === t.key }]"
+          @click="setTab(t.key)"
+        >{{ t.label }}</button>
+      </div>
+
+      <p class="err" v-if="error">{{ error }}</p>
+
+      <!-- 设定 -->
+      <section v-if="activeTab === 'setting'" class="panel">
+        <div class="panel-head">
+          <h3>故事设定</h3>
+          <button class="btn primary" @click="generateSetting" :disabled="generatingSetting">
+            {{ generatingSetting ? '生成中…' : '生成设定' }}
+          </button>
+        </div>
+        <p class="hint">世界观、人物、风格（JSON 格式，可直接编辑）。</p>
+        <textarea class="editor json" v-model="settingText"></textarea>
+        <button class="btn" @click="saveSetting" :disabled="saving">保存设定</button>
+      </section>
+
+      <!-- 大纲 -->
+      <section v-if="activeTab === 'outline'" class="panel">
+        <div class="panel-head">
+          <h3>故事大纲</h3>
+          <button class="btn primary" @click="generateOutline" :disabled="generatingOutline">
+            {{ generatingOutline ? '生成中…' : '生成大纲' }}
+          </button>
+        </div>
+        <p class="hint">全书梗概与分幕情节（JSON 格式，可直接编辑）。</p>
+        <textarea class="editor json" v-model="outlineText"></textarea>
+        <button class="btn" @click="saveOutline" :disabled="saving">保存大纲</button>
+      </section>
+
+      <!-- 章节规划 -->
+      <section v-if="activeTab === 'plan'" class="panel">
+        <div class="panel-head">
+          <h3>章节规划</h3>
+          <button class="btn primary" @click="generatePlan" :disabled="generatingPlan">
+            {{ generatingPlan ? '生成中…' : '生成规划' }}
+          </button>
+        </div>
+        <div class="plan-item" v-for="(c, i) in planChapters" :key="i">
+          <span class="plan-num">第 {{ c.number || (i + 1) }} 章</span>
+          <input class="plan-title" v-model="c.title" placeholder="章节标题" />
+          <textarea class="plan-summary" v-model="c.summary" placeholder="本章情节要点"></textarea>
+          <button class="btn danger small" @click="planChapters.splice(i, 1)">删除</button>
+        </div>
+        <div class="row">
+          <button class="btn" @click="addPlanChapter">+ 添加一章</button>
+          <button class="btn primary" @click="savePlan" :disabled="saving">保存规划</button>
+        </div>
+      </section>
+
+      <!-- 章节 -->
+      <section v-if="activeTab === 'chapters'" class="panel">
+        <div class="panel-head">
+          <h3>章节</h3>
+          <button class="btn primary" @click="generateNextChapter" :disabled="streaming">
+            {{ streaming ? '生成中…' : '生成下一章' }}
+          </button>
+        </div>
+
+        <div v-if="streaming" class="stream-box">
+          <div class="stream-title">正在生成…</div>
+          <div class="stream-content">{{ liveContent }}</div>
+        </div>
+
+        <div class="chapter-layout">
+          <div class="chapter-list">
+            <div
+              v-for="c in project.chapters" :key="c.id"
+              :class="['chapter-item', { selected: currentChapter && currentChapter.id === c.id }]"
+              @click="selectChapter(c)"
+            >
+              <span class="cnum">第{{ c.number }}章</span>
+              <span class="ctitle">{{ c.title || '（无标题）' }}</span>
+              <span class="badge small">{{ chapterStatus(c.status) }}</span>
+            </div>
+            <div v-if="project.chapters.length === 0" class="empty">还没有章节，点击「生成下一章」开始写作。</div>
+          </div>
+
+          <div class="chapter-editor" v-if="currentChapter">
+            <input class="ctitle-input" v-model="currentChapter.title" placeholder="章节标题" />
+            <textarea class="editor" v-model="currentChapter.content"></textarea>
+            <div class="row">
+              <button class="btn" @click="saveChapter" :disabled="saving">保存</button>
+              <button class="btn success" @click="confirmChapter" :disabled="saving">确认本章</button>
+              <button class="btn warn" @click="regenerateChapter" :disabled="streaming">重新生成</button>
+            </div>
+          </div>
+          <div class="chapter-editor empty" v-else>选择左侧章节查看或编辑。</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/vendor/vue.global.prod.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
