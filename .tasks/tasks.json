@@ -1,0 +1,285 @@
+{
+  "project": "小说创作智能体",
+  "requirements": [
+    { "id": "REQ-001", "title": "创建小说项目", "status": "已完成" },
+    { "id": "REQ-002", "title": "生成故事设定", "status": "已完成" },
+    { "id": "REQ-003", "title": "生成故事大纲", "status": "已完成" },
+    { "id": "REQ-004", "title": "生成章节规划（V1 全书级，已被分卷规划替代）", "status": "已完成" },
+    { "id": "REQ-005", "title": "逐章生成正文（逐步确认）", "status": "已完成" },
+    { "id": "REQ-006", "title": "状态保存与继续写作", "status": "已完成" },
+    { "id": "REQ-007", "title": "查看/编辑/重新生成章节", "status": "已完成" },
+    { "id": "REQ-008", "title": "导出 Markdown", "status": "已完成" },
+    { "id": "REQ-009", "title": "增加卷数据结构（Volume 模型/分卷大纲/分卷规划）", "status": "已完成" },
+    { "id": "REQ-010", "title": "双层状态机（全书阶段 + 卷内阶段循环）", "status": "已完成" },
+    { "id": "REQ-011", "title": "分层上下文构建（全书/分卷/追踪/近期四层）", "status": "已完成" },
+    { "id": "REQ-012", "title": "章节确认后自动追踪（人物状态/伏笔/全局与卷摘要）", "status": "已完成" },
+    { "id": "REQ-013", "title": "按卷生成章节规划（15~30 章）+ 可滚动", "status": "已完成" },
+    { "id": "REQ-014", "title": "分卷浏览与写作（API + 前端分卷 UI）", "status": "已完成" },
+    { "id": "REQ-015", "title": "按卷导出 + 合并导出全部卷", "status": "已完成" },
+    { "id": "REQ-016", "title": "数据库性能优化（章节索引 + 列表分页）", "status": "已完成" },
+    { "id": "REQ-017", "title": "首页 AI 创意灵感生成（不自动建项目）", "status": "已完成" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "创建 FastAPI 项目骨架 + 健康检查接口",
+      "requirement_ids": ["REQ-001"],
+      "module": "Backend",
+      "depends_on": [],
+      "status": "completed",
+      "verification": "GET /api/health 返回 ok"
+    },
+    {
+      "id": "TASK-002",
+      "title": "创建 SQLite 连接与数据模型",
+      "requirement_ids": ["REQ-001", "REQ-006"],
+      "module": "Database",
+      "depends_on": ["TASK-001"],
+      "status": "completed",
+      "verification": "模型可建表，pytest 通过"
+    },
+    {
+      "id": "TASK-003",
+      "title": "实现 Project CRUD API",
+      "requirement_ids": ["REQ-001"],
+      "module": "API",
+      "depends_on": ["TASK-002"],
+      "status": "completed",
+      "verification": "创建/列表/详情接口测试通过"
+    },
+    {
+      "id": "TASK-004",
+      "title": "实现 DeepSeek Client（JSON 解析、重试、流式）",
+      "requirement_ids": ["REQ-002"],
+      "module": "LLM",
+      "depends_on": ["TASK-001"],
+      "status": "completed",
+      "verification": "generate_json / stream_text 接口可用"
+    },
+    {
+      "id": "TASK-005",
+      "title": "实现故事设定生成阶段",
+      "requirement_ids": ["REQ-002"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-003", "TASK-004"],
+      "status": "completed",
+      "verification": "生成设定入库并返回，测试通过"
+    },
+    {
+      "id": "TASK-006",
+      "title": "实现大纲生成阶段",
+      "requirement_ids": ["REQ-003"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-005"],
+      "status": "completed",
+      "verification": "无设定时返回 409，有设定时生成成功"
+    },
+    {
+      "id": "TASK-007",
+      "title": "实现章节规划生成阶段（V1 全书级，已废弃）",
+      "requirement_ids": ["REQ-004"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-006"],
+      "status": "completed",
+      "verification": "V2 起由分卷规划替代"
+    },
+    {
+      "id": "TASK-008",
+      "title": "实现 ContextBuilder（V1 上章结尾 800 字）",
+      "requirement_ids": ["REQ-005"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-007"],
+      "status": "completed",
+      "verification": "tail_of 截取 800 字，测试通过"
+    },
+    {
+      "id": "TASK-009",
+      "title": "实现章节生成 + SSE 流式接口",
+      "requirement_ids": ["REQ-005"],
+      "module": "API",
+      "depends_on": ["TASK-008"],
+      "status": "completed",
+      "verification": "SSE 事件含 token/done，测试通过"
+    },
+    {
+      "id": "TASK-010",
+      "title": "实现状态机与继续写作逻辑（V1 单层）",
+      "requirement_ids": ["REQ-006"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-009"],
+      "status": "completed",
+      "verification": "继续写作生成下一章，测试通过"
+    },
+    {
+      "id": "TASK-011",
+      "title": "实现导出 Markdown 接口（V1 全书一次性）",
+      "requirement_ids": ["REQ-008"],
+      "module": "API",
+      "depends_on": ["TASK-010"],
+      "status": "completed",
+      "verification": "导出包含设定/规划/正文，测试通过"
+    },
+    {
+      "id": "TASK-012",
+      "title": "实现静态 Vue 3 前端并联调（V1）",
+      "requirement_ids": ["REQ-007"],
+      "module": "Frontend",
+      "depends_on": ["TASK-009"],
+      "status": "completed",
+      "verification": "首页可访问，SSE 前端读取逻辑就绪"
+    },
+    {
+      "id": "TASK-013",
+      "title": "Volume 数据模型 + Chapter.volume_id + Project 追踪字段，重置数据库",
+      "requirement_ids": ["REQ-009", "REQ-016"],
+      "module": "Database",
+      "depends_on": ["TASK-002"],
+      "status": "completed",
+      "verification": "create_all 建表成功，章节复合索引就绪"
+    },
+    {
+      "id": "TASK-014",
+      "title": "双层状态机（全书 advance_stage + 卷内 advance_volume_stage）",
+      "requirement_ids": ["REQ-010"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-013"],
+      "status": "completed",
+      "verification": "卷完成推进下一卷、全部完成置 completed，测试通过"
+    },
+    {
+      "id": "TASK-015",
+      "title": "VolumeRepository + ContentRepository 扩展（分页/计数/卷内位置）",
+      "requirement_ids": ["REQ-009", "REQ-016"],
+      "module": "Repository",
+      "depends_on": ["TASK-013"],
+      "status": "completed",
+      "verification": "列表分页与卷过滤接口返回正确 total"
+    },
+    {
+      "id": "TASK-016",
+      "title": "ContextBuilder 四层上下文 + Prompts（卷大纲/卷规划/追踪模板）",
+      "requirement_ids": ["REQ-011", "REQ-013"],
+      "module": "Pipeline",
+      "depends_on": ["TASK-015"],
+      "status": "completed",
+      "verification": "四层结构上下文生成章节消息，测试通过"
+    },
+    {
+      "id": "TASK-017",
+      "title": "VolumeService（卷 CRUD/卷大纲/卷规划/卷内章节/完成推进/导出）",
+      "requirement_ids": ["REQ-009", "REQ-010", "REQ-013", "REQ-014", "REQ-015"],
+      "module": "Service",
+      "depends_on": ["TASK-016"],
+      "status": "completed",
+      "verification": "卷全流程与完成推进测试通过"
+    },
+    {
+      "id": "TASK-018",
+      "title": "TrackingService（章节确认后自动提取并合并追踪）",
+      "requirement_ids": ["REQ-012"],
+      "module": "Service",
+      "depends_on": ["TASK-016"],
+      "status": "completed",
+      "verification": "确认后人物状态/伏笔/摘要更新，测试通过"
+    },
+    {
+      "id": "TASK-019",
+      "title": "API 路由（volumes 路由 + projects/chapters 扩展 + 分页）",
+      "requirement_ids": ["REQ-014", "REQ-016"],
+      "module": "API",
+      "depends_on": ["TASK-017", "TASK-018"],
+      "status": "completed",
+      "verification": "卷/分页/导出接口均 200，测试通过"
+    },
+    {
+      "id": "TASK-020",
+      "title": "测试更新与新增（假 LLM 卷流程：全流程/继续写作/完成推进/全书完成/分页/导出）",
+      "requirement_ids": ["REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013", "REQ-014", "REQ-015", "REQ-016"],
+      "module": "Test",
+      "depends_on": ["TASK-019"],
+      "status": "completed",
+      "verification": "11 个用例全部通过"
+    },
+    {
+      "id": "TASK-021",
+      "title": "前端分卷 UI + 追踪面板 + 分卷/合并导出",
+      "requirement_ids": ["REQ-014", "REQ-015", "REQ-012"],
+      "module": "Frontend",
+      "depends_on": ["TASK-019"],
+      "status": "completed",
+      "verification": "浏览器端到端验证通过（真实 LLM）"
+    },
+    {
+      "id": "TASK-022",
+      "title": "启动验证 + 真实 LLM 端到端验证（设定→全书大纲→卷大纲→卷规划→章节→确认→追踪）",
+      "requirement_ids": ["REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013", "REQ-014", "REQ-015"],
+      "module": "Verification",
+      "depends_on": ["TASK-020", "TASK-021"],
+      "status": "completed",
+      "verification": "健康检查/前端/卷接口 200；真实 LLM 生成 25 章规划与首章正文，追踪字段更新"
+    },
+    {
+      "id": "TASK-023",
+      "title": "文档同步（README / changes / tasks / progress）",
+      "requirement_ids": [],
+      "module": "Docs",
+      "depends_on": ["TASK-022"],
+      "status": "completed",
+      "verification": "README 与 changes 反映真实实现"
+    },
+    {
+      "id": "TASK-024",
+      "title": "创意 Prompt：build_idea_messages + IDEA_SYSTEM",
+      "requirement_ids": ["REQ-017"],
+      "module": "Pipeline",
+      "depends_on": [],
+      "status": "completed",
+      "verification": "输出 {\"ideas\":[...]} 结构"
+    },
+    {
+      "id": "TASK-025",
+      "title": "IdeaService.generate_ideas + count 校验（1~5）",
+      "requirement_ids": ["REQ-017"],
+      "module": "Service",
+      "depends_on": ["TASK-024"],
+      "status": "completed",
+      "verification": "返回归一化 ideas；count 越界抛 400"
+    },
+    {
+      "id": "TASK-026",
+      "title": "Schemas + api/ideas.py + deps + main 注册",
+      "requirement_ids": ["REQ-017"],
+      "module": "API",
+      "depends_on": ["TASK-025"],
+      "status": "completed",
+      "verification": "POST /api/ideas/generate 可用"
+    },
+    {
+      "id": "TASK-027",
+      "title": "前端：✨ 灵感创意入口 + 面板 + 选择填入",
+      "requirement_ids": ["REQ-017"],
+      "module": "Frontend",
+      "depends_on": ["TASK-026"],
+      "status": "completed",
+      "verification": "选中创意自动填入并可编辑"
+    },
+    {
+      "id": "TASK-028",
+      "title": "测试：FakeLLM 创意分支 + ideas 接口用例",
+      "requirement_ids": ["REQ-017"],
+      "module": "Test",
+      "depends_on": ["TASK-026"],
+      "status": "completed",
+      "verification": "12 个用例全部通过"
+    },
+    {
+      "id": "TASK-029",
+      "title": "文档同步（README / changes / tasks / progress）",
+      "requirement_ids": ["REQ-017"],
+      "module": "Docs",
+      "depends_on": ["TASK-027", "TASK-028"],
+      "status": "completed",
+      "verification": "README 与 changes 反映真实实现"
+    }
+  ]
+}
