@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import chapters, projects
+from .api import chapters, ideas, projects, volumes
 from .database import Base, engine
 
 Base.metadata.create_all(bind=engine)
@@ -20,6 +20,8 @@ app.add_middleware(
 
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(chapters.router, prefix="/api", tags=["chapters"])
+app.include_router(volumes.router, prefix="/api", tags=["volumes"])
+app.include_router(ideas.router, prefix="/api", tags=["ideas"])
 
 
 @app.get("/api/health")

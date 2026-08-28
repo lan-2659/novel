@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..llm.deepseek_client import DeepSeekClient, LLMClient
 from ..services.generation_service import GenerationService
+from ..services.idea_service import IdeaService
 from ..services.project_service import ProjectService
+from ..services.volume_service import VolumeService
 
 
 def get_llm_client() -> LLMClient:
@@ -20,3 +22,17 @@ def get_generation_service(
     llm: LLMClient = Depends(get_llm_client),
 ) -> GenerationService:
     return GenerationService(db, llm)
+
+
+def get_volume_service(
+    db: Session = Depends(get_db),
+    llm: LLMClient = Depends(get_llm_client),
+) -> VolumeService:
+    return VolumeService(db, llm)
+
+
+def get_idea_service(
+    db: Session = Depends(get_db),
+    llm: LLMClient = Depends(get_llm_client),
+) -> IdeaService:
+    return IdeaService(db, llm)

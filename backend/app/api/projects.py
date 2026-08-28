@@ -6,10 +6,13 @@ from ..schemas.entities import (
     ProjectDetail,
     ProjectOut,
     SettingOut,
+    VolumeCreate,
+    VolumeOut,
 )
 from ..services.generation_service import GenerationService
 from ..services.project_service import ProjectService
-from .deps import get_generation_service, get_project_service
+from ..services.volume_service import VolumeService
+from .deps import get_generation_service, get_project_service, get_volume_service
 
 router = APIRouter()
 
@@ -66,18 +69,26 @@ def save_outline(
     return svc.save_outline(project_id, payload.content)
 
 
-@router.post("/projects/{project_id}/chapter-plan", response_model=SettingOut)
-def generate_chapter_plan(
+@router.post("/projects/{project_id}/volumes", response_model=VolumeOut, status_code=201)
+def create_volume(
     project_id: int,
-    svc: GenerationService = Depends(get_generation_service),
+    payload: VolumeCreate,
+    svc: VolumeService = Depends(get_volume_service),
 ):
-    return svc.generate_chapter_plan(project_id)
+    return svc.create_volume(project_id, payload.title)
 
 
-@router.put("/projects/{project_id}/chapter-plan", response_model=SettingOut)
-def save_chapter_plan(
+@router.get("/projects/{project_id}/volumes", response_model=list[VolumeOut])
+def list_volumes(
     project_id: int,
-    payload: ContentIn,
-    svc: GenerationService = Depends(get_generation_service),
+    svc: VolumeService = Depends(get_volume_service),
 ):
-    return svc.save_chapter_plan(project_id, payload.content)
+    return svc.list_volumes(project_id)
+
+
+@router.get("/projects/{project_id}/export")
+def export_project(
+    project_id: int,
+    svc: VolumeService = Depends(get_volume_service),
+):
+    return {"markdown": svc.export_project(project_id)}

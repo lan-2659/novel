@@ -2,11 +2,23 @@ const { createApp } = Vue;
 
 const STAGE_LABELS = {
   idea: "创意",
-  setting: "设定",
-  outline: "大纲",
-  chapter_plan: "章节规划",
+  setting: "全书设定",
+  outline: "全书大纲",
   writing: "写作中",
   completed: "已完结",
+};
+
+const VOLUME_STAGE_LABELS = {
+  volume_outline: "待卷大纲",
+  volume_plan: "待卷规划",
+  writing: "写作中",
+  volume_completed: "卷已完成",
+};
+
+const VOLUME_STATUS_LABELS = {
+  draft: "草稿",
+  writing: "写作中",
+  completed: "已完成",
 };
 
 const STATUS_LABELS = {
@@ -25,23 +37,44 @@ createApp({
       activeTab: "setting",
       tabs: [
         { key: "setting", label: "设定" },
-        { key: "outline", label: "大纲" },
-        { key: "plan", label: "章节规划" },
+        { key: "outline", label: "全书大纲" },
+        { key: "volumes", label: "卷" },
+        { key: "tracking", label: "追踪" },
+      ],
+      // 全局设定 / 全书大纲编辑
+      settingText: "",
+      outlineText: "",
+      // 卷相关
+      selectedVolumeId: null,
+      currentVolume: null,
+      volumeTab: "outline",
+      volumeTabs: [
+        { key: "outline", label: "卷大纲" },
+        { key: "plan", label: "卷规划" },
         { key: "chapters", label: "章节" },
       ],
+      volumeOutlineText: "",
+      planChapters: [],
+      currentChapter: null,
+      chapterPage: 1,
+      chapterPageSize: 50,
+      // 新建项目
       newPremise: "",
       newTitle: "",
       creating: false,
+      creatingVolume: false,
+      // 灵感创意
+      ideas: [],
+      showIdeas: false,
+      ideasLoading: false,
+      // 状态
       error: "",
-      settingText: "",
-      outlineText: "",
-      planChapters: [],
-      currentChapter: null,
       streaming: false,
       liveContent: "",
       generatingSetting: false,
       generatingOutline: false,
-      generatingPlan: false,
+      generatingVolumeOutline: false,
+      generatingVolumePlan: false,
       saving: false,
     };
   },
@@ -52,11 +85,23 @@ createApp({
     stageLabel(s) {
       return STAGE_LABELS[s] || s;
     },
+    volumeStageLabel(s) {
+      return VOLUME_STAGE_LABELS[s] || s;
+    },
+    volumeStatusLabel(s) {
+      return VOLUME_STATUS_LABELS[s] || s;
+    },
     chapterStatus(s) {
       return STATUS_LABELS[s] || s;
     },
     pretty(obj) {
       return JSON.stringify(obj, null, 2);
+    },
+    isCurrentVolume(v) {
+      return this.project && v && v.id === this.project.current_volume_id;
+    },
+    currentVolumeId() {
+      return this.selectedVolumeId || (this.project && this.project.current_volume_id) || null;
     },
 
     async api(url, opts = {}) {
@@ -72,6 +117,7 @@ createApp({
       return resp.json();
     },
 
+    // ---- 项目列表 ----
     async loadProjects() {
       try {
         this.projects = await this.api("/api/projects");
@@ -113,16 +159,52 @@ createApp({
         this.project = await this.api(`/api/projects/${id}`);
         this.view = "project";
         this.activeTab = "setting";
+        this.currentVolume = null;
         this.currentChapter = null;
         this.syncFromProject();
+        const vid = this.currentVolumeId();
+        if (vid) await this.loadVolumeDetail(vid);
       } catch (e) {
         this.error = e.message;
       }
     },
 
+    // ---- 灵感创意 ----
+    async generateIdeas() {
+      this.error = "";
+      this.ideasLoading = true;
+      this.showIdeas = true;
+      this.ideas = [];
+      try {
+        const data = await this.api("/api/ideas/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ count: 5 }),
+        });
+        this.ideas = data.ideas || [];
+      } catch (e) {
+        this.error = e.message;
+        this.ideas = [];
+      } finally {
+        this.ideasLoading = false;
+      }
+    },
+
+    useIdea(idea) {
+      this.newPremise = idea.idea || "";
+      this.newTitle = idea.title || "";
+      this.closeIdeas();
+    },
+
+    closeIdeas() {
+      this.showIdeas = false;
+      this.ideas = [];
+    },
+
     backToList() {
       this.view = "list";
       this.project = null;
+      this.currentVolume = null;
       this.currentChapter = null;
       this.error = "";
       this.loadProjects();
@@ -131,23 +213,22 @@ createApp({
     async refreshProject() {
       this.project = await this.api(`/api/projects/${this.project.id}`);
       this.syncFromProject();
+      if (this.currentVolume) {
+        const vid = this.currentVolume.id;
+        if (this.project.volumes.some((v) => v.id === vid)) {
+          await this.loadVolumeDetail(vid);
+        } else {
+          const nv = this.currentVolumeId();
+          if (nv) await this.loadVolumeDetail(nv);
+        }
+      }
     },
 
     syncFromProject() {
       this.settingText = this.project.setting ? this.pretty(this.project.setting) : "";
       this.outlineText = this.project.outline ? this.pretty(this.project.outline) : "";
-      const plan = this.project.chapter_plan;
-      this.planChapters =
-        plan && Array.isArray(plan.chapters)
-          ? plan.chapters.map((c) => ({
-              number: c.number || 0,
-              title: c.title || "",
-              summary: c.summary || "",
-            }))
-          : [];
-      if (this.currentChapter) {
-        const fresh = this.project.chapters.find((c) => c.id === this.currentChapter.id);
-        if (fresh) this.currentChapter = { ...fresh };
+      if (!this.selectedVolumeId && this.project.volumes.length) {
+        this.selectedVolumeId = this.project.current_volume_id || this.project.volumes[0].id;
       }
     },
 
@@ -170,16 +251,17 @@ createApp({
     },
 
     async saveSetting() {
-      await this.saveJson("settings");
+      await this.saveGlobalJson("settings", "设定");
     },
 
-    // ---- 大纲 ----
+    // ---- 全书大纲 ----
     async generateOutline() {
       this.error = "";
       this.generatingOutline = true;
       try {
         await this.api(`/api/projects/${this.project.id}/outline`, { method: "POST" });
         await this.refreshProject();
+        this.activeTab = "volumes";
       } catch (e) {
         this.error = e.message;
       } finally {
@@ -188,10 +270,10 @@ createApp({
     },
 
     async saveOutline() {
-      await this.saveJson("outline");
+      await this.saveGlobalJson("outline", "全书大纲");
     },
 
-    async saveJson(kind) {
+    async saveGlobalJson(kind, label) {
       this.error = "";
       this.saving = true;
       try {
@@ -200,7 +282,7 @@ createApp({
         try {
           content = JSON.parse(text);
         } catch (e) {
-          throw new Error(kind === "settings" ? "设定 JSON 格式错误" : "大纲 JSON 格式错误");
+          throw new Error(`${label} JSON 格式错误`);
         }
         await this.api(`/api/projects/${this.project.id}/${kind}`, {
           method: "PUT",
@@ -215,17 +297,111 @@ createApp({
       }
     },
 
-    // ---- 章节规划 ----
-    async generatePlan() {
-      this.error = "";
-      this.generatingPlan = true;
+    // ---- 卷 ----
+    async loadVolumeDetail(id) {
       try {
-        await this.api(`/api/projects/${this.project.id}/chapter-plan`, { method: "POST" });
+        this.currentVolume = await this.api(`/api/volumes/${id}`);
+        this.selectedVolumeId = id;
+        this.syncVolumeEditors();
+        this.chapterPage = 1;
+      } catch (e) {
+        this.error = e.message;
+      }
+    },
+
+    async selectVolume(id) {
+      if (id === this.selectedVolumeId && this.currentVolume) return;
+      this.currentChapter = null;
+      await this.loadVolumeDetail(id);
+    },
+
+    async createVolume() {
+      this.error = "";
+      this.creatingVolume = true;
+      try {
+        const v = await this.api(`/api/projects/${this.project.id}/volumes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        await this.refreshProject();
+        await this.loadVolumeDetail(v.id);
+      } catch (e) {
+        this.error = e.message;
+      } finally {
+        this.creatingVolume = false;
+      }
+    },
+
+    setVolumeTab(t) {
+      this.volumeTab = t;
+    },
+
+    syncVolumeEditors() {
+      const v = this.currentVolume;
+      if (!v) return;
+      this.volumeOutlineText = v.outline ? this.pretty(v.outline) : "";
+      const plan = v.chapter_plan;
+      this.planChapters =
+        plan && Array.isArray(plan.chapters)
+          ? plan.chapters.map((c) => ({
+              number: c.number || 0,
+              title: c.title || "",
+              summary: c.summary || "",
+            }))
+          : [];
+      if (this.currentChapter) {
+        const fresh = (v.chapters || []).find((c) => c.id === this.currentChapter.id);
+        if (fresh) this.currentChapter = { ...fresh };
+      }
+    },
+
+    async generateVolumeOutline() {
+      this.error = "";
+      this.generatingVolumeOutline = true;
+      try {
+        await this.api(`/api/volumes/${this.currentVolume.id}/outline`, { method: "POST" });
         await this.refreshProject();
       } catch (e) {
         this.error = e.message;
       } finally {
-        this.generatingPlan = false;
+        this.generatingVolumeOutline = false;
+      }
+    },
+
+    async saveVolumeOutline() {
+      this.error = "";
+      this.saving = true;
+      try {
+        let content;
+        try {
+          content = JSON.parse(this.volumeOutlineText);
+        } catch (e) {
+          throw new Error("卷大纲 JSON 格式错误");
+        }
+        await this.api(`/api/volumes/${this.currentVolume.id}/outline`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        await this.refreshProject();
+      } catch (e) {
+        this.error = e.message;
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async generateVolumePlan() {
+      this.error = "";
+      this.generatingVolumePlan = true;
+      try {
+        await this.api(`/api/volumes/${this.currentVolume.id}/chapter-plan`, { method: "POST" });
+        await this.refreshProject();
+      } catch (e) {
+        this.error = e.message;
+      } finally {
+        this.generatingVolumePlan = false;
       }
     },
 
@@ -237,7 +413,7 @@ createApp({
       });
     },
 
-    async savePlan() {
+    async saveVolumePlan() {
       this.error = "";
       this.saving = true;
       try {
@@ -246,7 +422,7 @@ createApp({
           title: c.title || "",
           summary: c.summary || "",
         }));
-        await this.api(`/api/projects/${this.project.id}/chapter-plan`, {
+        await this.api(`/api/volumes/${this.currentVolume.id}/chapter-plan`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: { chapters } }),
@@ -304,15 +480,15 @@ createApp({
     },
 
     async generateNextChapter() {
-      if (this.streaming) return;
+      if (this.streaming || !this.currentVolume) return;
       this.error = "";
       this.streaming = true;
       this.liveContent = "";
       try {
-        const doneId = await this.runStream(`/api/projects/${this.project.id}/chapters`);
+        const doneId = await this.runStream(`/api/volumes/${this.currentVolume.id}/chapters`);
         await this.refreshProject();
-        if (doneId) {
-          const ch = this.project.chapters.find((c) => c.id === doneId);
+        if (doneId && this.currentVolume) {
+          const ch = (this.currentVolume.chapters || []).find((c) => c.id === doneId);
           if (ch) this.selectChapter(ch);
         }
       } catch (e) {
@@ -331,7 +507,9 @@ createApp({
       try {
         await this.runStream(`/api/chapters/${this.currentChapter.id}/regenerate`);
         await this.refreshProject();
-        const fresh = this.project.chapters.find((c) => c.id === this.currentChapter.id);
+        const fresh = (this.currentVolume.chapters || []).find(
+          (c) => c.id === this.currentChapter.id
+        );
         if (fresh) this.currentChapter = { ...fresh };
       } catch (e) {
         this.error = e.message;
@@ -382,19 +560,37 @@ createApp({
       return doneChapterId;
     },
 
-    async exportMarkdown() {
+    // ---- 导出 ----
+    async exportVolume() {
+      if (!this.currentVolume) return;
       try {
-        const data = await this.api(`/api/projects/${this.project.id}/export`);
-        const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${this.project.title || "novel"}.md`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const data = await this.api(`/api/volumes/${this.currentVolume.id}/export`);
+        this.downloadMarkdown(
+          data.markdown,
+          `${this.project.title || "novel"}·${this.currentVolume.title}.md`
+        );
       } catch (e) {
         this.error = e.message;
       }
+    },
+
+    async exportMarkdown() {
+      try {
+        const data = await this.api(`/api/projects/${this.project.id}/export`);
+        this.downloadMarkdown(data.markdown, `${this.project.title || "novel"}.md`);
+      } catch (e) {
+        this.error = e.message;
+      }
+    },
+
+    downloadMarkdown(text, filename) {
+      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     },
   },
 }).mount("#app");

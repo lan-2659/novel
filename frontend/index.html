@@ -18,12 +18,36 @@
       <section class="card create-card">
         <h2>开始一部新小说</h2>
         <p class="hint">输入创意或一句话简介，系统会依次生成设定、大纲、章节规划与正文。</p>
+        <div class="row between">
+          <button class="btn ghost" @click="generateIdeas" :disabled="ideasLoading">
+            {{ ideasLoading ? '生成中…' : '✨ 灵感创意' }}
+          </button>
+        </div>
         <textarea v-model="newPremise" placeholder="例如：一个失去记忆的侦探，在追查一桩案件时发现自己正是凶手…"></textarea>
         <div class="row">
           <input v-model="newTitle" placeholder="书名（可选）" />
           <button class="btn primary" @click="createProject" :disabled="creating">
             {{ creating ? '创建中…' : '创建项目' }}
           </button>
+        </div>
+
+        <!-- 灵感创意面板 -->
+        <div v-if="showIdeas" class="ideas-panel">
+          <div class="ideas-head">
+            <span>💡 灵感创意（选择一个填入，可再编辑）</span>
+            <button class="btn ghost small" @click="closeIdeas">关闭</button>
+          </div>
+          <div v-if="ideasLoading" class="empty">正在生成创意…</div>
+          <div v-else-if="!ideas.length" class="empty">生成失败，请点击「✨ 灵感创意」重试。</div>
+          <div v-else class="idea-card" v-for="(idea, i) in ideas" :key="i">
+            <div class="idea-title-row">
+              <span class="idea-title">{{ idea.title }}</span>
+              <span class="badge">{{ idea.genre }}</span>
+            </div>
+            <div class="idea-hook">⚡ {{ idea.hook }}</div>
+            <div class="idea-desc">{{ idea.idea }}</div>
+            <button class="btn primary small" @click="useIdea(idea)">使用这个创意</button>
+          </div>
         </div>
       </section>
 
@@ -49,7 +73,8 @@
         </div>
         <div class="row">
           <span class="badge">{{ stageLabel(project.stage) }}</span>
-          <button class="btn ghost" @click="exportMarkdown">导出 Markdown</button>
+          <button class="btn ghost" @click="exportMarkdown">合并导出全部卷</button>
+          <button class="btn ghost" v-if="currentVolume" @click="exportVolume">导出当前卷</button>
         </div>
       </div>
 
@@ -63,7 +88,7 @@
 
       <p class="err" v-if="error">{{ error }}</p>
 
-      <!-- 设定 -->
+      <!-- 设定（全书级） -->
       <section v-if="activeTab === 'setting'" class="panel">
         <div class="panel-head">
           <h3>故事设定</h3>
@@ -76,78 +101,160 @@
         <button class="btn" @click="saveSetting" :disabled="saving">保存设定</button>
       </section>
 
-      <!-- 大纲 -->
+      <!-- 全书大纲 -->
       <section v-if="activeTab === 'outline'" class="panel">
         <div class="panel-head">
-          <h3>故事大纲</h3>
+          <h3>全书大纲</h3>
           <button class="btn primary" @click="generateOutline" :disabled="generatingOutline">
-            {{ generatingOutline ? '生成中…' : '生成大纲' }}
+            {{ generatingOutline ? '生成中…' : '生成全书大纲' }}
           </button>
         </div>
-        <p class="hint">全书梗概与分幕情节（JSON 格式，可直接编辑）。</p>
+        <p class="hint">全书梗概与分幕情节（JSON 格式，可直接编辑）。生成后会自动创建第一卷。</p>
         <textarea class="editor json" v-model="outlineText"></textarea>
-        <button class="btn" @click="saveOutline" :disabled="saving">保存大纲</button>
+        <button class="btn" @click="saveOutline" :disabled="saving">保存全书大纲</button>
       </section>
 
-      <!-- 章节规划 -->
-      <section v-if="activeTab === 'plan'" class="panel">
+      <!-- 卷 -->
+      <section v-if="activeTab === 'volumes'" class="panel">
         <div class="panel-head">
-          <h3>章节规划</h3>
-          <button class="btn primary" @click="generatePlan" :disabled="generatingPlan">
-            {{ generatingPlan ? '生成中…' : '生成规划' }}
+          <h3>分卷</h3>
+          <button class="btn" @click="createVolume" :disabled="creatingVolume">
+            {{ creatingVolume ? '创建中…' : '+ 新建卷' }}
           </button>
         </div>
-        <div class="plan-item" v-for="(c, i) in planChapters" :key="i">
-          <span class="plan-num">第 {{ c.number || (i + 1) }} 章</span>
-          <input class="plan-title" v-model="c.title" placeholder="章节标题" />
-          <textarea class="plan-summary" v-model="c.summary" placeholder="本章情节要点"></textarea>
-          <button class="btn danger small" @click="planChapters.splice(i, 1)">删除</button>
-        </div>
-        <div class="row">
-          <button class="btn" @click="addPlanChapter">+ 添加一章</button>
-          <button class="btn primary" @click="savePlan" :disabled="saving">保存规划</button>
-        </div>
-      </section>
+        <p class="hint">每卷拥有独立大纲、章节规划与剧情摘要；写完后自动推进到下一卷。</p>
 
-      <!-- 章节 -->
-      <section v-if="activeTab === 'chapters'" class="panel">
-        <div class="panel-head">
-          <h3>章节</h3>
-          <button class="btn primary" @click="generateNextChapter" :disabled="streaming">
-            {{ streaming ? '生成中…' : '生成下一章' }}
-          </button>
-        </div>
-
-        <div v-if="streaming" class="stream-box">
-          <div class="stream-title">正在生成…</div>
-          <div class="stream-content">{{ liveContent }}</div>
-        </div>
-
-        <div class="chapter-layout">
-          <div class="chapter-list">
-            <div
-              v-for="c in project.chapters" :key="c.id"
-              :class="['chapter-item', { selected: currentChapter && currentChapter.id === c.id }]"
-              @click="selectChapter(c)"
-            >
-              <span class="cnum">第{{ c.number }}章</span>
-              <span class="ctitle">{{ c.title || '（无标题）' }}</span>
-              <span class="badge small">{{ chapterStatus(c.status) }}</span>
+        <div class="volume-list">
+          <div
+            v-for="v in project.volumes"
+            :key="v.id"
+            :class="['volume-item', { active: currentVolume && currentVolume.id === v.id }]"
+            @click="selectVolume(v.id)"
+          >
+            <div class="volume-title">
+              <span>第{{ v.number }}卷</span>
+              <span class="vtitle">{{ v.title }}</span>
+              <span v-if="isCurrentVolume(v)" class="badge current">当前卷</span>
             </div>
-            <div v-if="project.chapters.length === 0" class="empty">还没有章节，点击「生成下一章」开始写作。</div>
+            <div class="volume-meta">
+              <span class="badge small">{{ volumeStatusLabel(v.status) }}</span>
+              <span class="badge small">{{ volumeStageLabel(v.stage) }}</span>
+              <span class="badge small" v-if="v.chapter_plan">规划 {{ (v.chapter_plan.chapters || []).length }} 章</span>
+            </div>
+          </div>
+          <div v-if="!project.volumes.length" class="empty">
+            还没有卷。先生成全书大纲会自动创建第一卷，或点击「新建卷」。
+          </div>
+        </div>
+
+        <div v-if="currentVolume" class="volume-detail">
+          <div class="panel-head">
+            <h3>第{{ currentVolume.number }}卷 · {{ currentVolume.title }}</h3>
+            <button class="btn ghost" @click="exportVolume">导出本卷</button>
           </div>
 
-          <div class="chapter-editor" v-if="currentChapter">
-            <input class="ctitle-input" v-model="currentChapter.title" placeholder="章节标题" />
-            <textarea class="editor" v-model="currentChapter.content"></textarea>
+          <div class="tabs sub">
+            <button
+              v-for="t in volumeTabs" :key="t.key"
+              :class="['tab', { active: volumeTab === t.key }]"
+              @click="setVolumeTab(t.key)"
+            >{{ t.label }}</button>
+          </div>
+
+          <!-- 卷大纲 -->
+          <div v-if="volumeTab === 'outline'" class="v-panel">
+            <div class="panel-head">
+              <button class="btn primary" @click="generateVolumeOutline" :disabled="generatingVolumeOutline">
+                {{ generatingVolumeOutline ? '生成中…' : '生成卷大纲' }}
+              </button>
+            </div>
+            <p class="hint">本卷写作蓝图（JSON 格式，可直接编辑）。</p>
+            <textarea class="editor json" v-model="volumeOutlineText"></textarea>
+            <button class="btn" @click="saveVolumeOutline" :disabled="saving">保存卷大纲</button>
+          </div>
+
+          <!-- 卷规划 -->
+          <div v-if="volumeTab === 'plan'" class="v-panel">
+            <div class="panel-head">
+              <button class="btn primary" @click="generateVolumePlan" :disabled="generatingVolumePlan">
+                {{ generatingVolumePlan ? '生成中…' : '生成卷规划（15~30章）' }}
+              </button>
+            </div>
+            <p class="hint">本卷逐章写作计划，可直接编辑；写完后可生成下一卷规划。</p>
+            <div class="plan-item" v-for="(c, i) in planChapters" :key="i">
+              <span class="plan-num">第 {{ c.number || (i + 1) }} 章</span>
+              <input class="plan-title" v-model="c.title" placeholder="章节标题" />
+              <textarea class="plan-summary" v-model="c.summary" placeholder="本章情节要点"></textarea>
+              <button class="btn danger small" @click="planChapters.splice(i, 1)">删除</button>
+            </div>
             <div class="row">
-              <button class="btn" @click="saveChapter" :disabled="saving">保存</button>
-              <button class="btn success" @click="confirmChapter" :disabled="saving">确认本章</button>
-              <button class="btn warn" @click="regenerateChapter" :disabled="streaming">重新生成</button>
+              <button class="btn" @click="addPlanChapter">+ 添加一章</button>
+              <button class="btn primary" @click="saveVolumePlan" :disabled="saving">保存卷规划</button>
             </div>
           </div>
-          <div class="chapter-editor empty" v-else>选择左侧章节查看或编辑。</div>
+
+          <!-- 章节 -->
+          <div v-if="volumeTab === 'chapters'" class="v-panel">
+            <div class="panel-head">
+              <button class="btn primary" @click="generateNextChapter" :disabled="streaming">
+                {{ streaming ? '生成中…' : '生成下一章' }}
+              </button>
+            </div>
+
+            <div v-if="streaming" class="stream-box">
+              <div class="stream-title">正在生成…</div>
+              <div class="stream-content">{{ liveContent }}</div>
+            </div>
+
+            <div class="chapter-layout">
+              <div class="chapter-list">
+                <div
+                  v-for="c in (currentVolume.chapters || [])" :key="c.id"
+                  :class="['chapter-item', { selected: currentChapter && currentChapter.id === c.id }]"
+                  @click="selectChapter(c)"
+                >
+                  <span class="cnum">第{{ c.number }}章</span>
+                  <span class="ctitle">{{ c.title || '（无标题）' }}</span>
+                  <span class="badge small">{{ chapterStatus(c.status) }}</span>
+                </div>
+                <div v-if="!(currentVolume.chapters || []).length" class="empty">
+                  还没有章节，点击「生成下一章」开始写作。
+                </div>
+              </div>
+
+              <div class="chapter-editor" v-if="currentChapter">
+                <input class="ctitle-input" v-model="currentChapter.title" placeholder="章节标题" />
+                <textarea class="editor" v-model="currentChapter.content"></textarea>
+                <div class="row">
+                  <button class="btn" @click="saveChapter" :disabled="saving">保存</button>
+                  <button class="btn success" @click="confirmChapter" :disabled="saving">确认本章</button>
+                  <button class="btn warn" @click="regenerateChapter" :disabled="streaming">重新生成</button>
+                </div>
+              </div>
+              <div class="chapter-editor empty" v-else>选择左侧章节查看或编辑。</div>
+            </div>
+          </div>
         </div>
+      </section>
+
+      <!-- 追踪（跨卷长期记忆） -->
+      <section v-if="activeTab === 'tracking'" class="panel">
+        <div class="panel-head">
+          <h3>跨卷长期追踪</h3>
+        </div>
+        <p class="hint">章节确认后由系统自动提取更新，用于保持人物与伏笔一致性。</p>
+
+        <h4>人物状态追踪</h4>
+        <pre class="tracking-box">{{ project.character_state_summary || '（暂无）' }}</pre>
+
+        <h4>未解伏笔</h4>
+        <ul class="foreshadow-list">
+          <li v-for="(f, i) in project.foreshadowing_items" :key="i">{{ f }}</li>
+          <li v-if="!(project.foreshadowing_items || []).length" class="empty">（暂无）</li>
+        </ul>
+
+        <h4>全局滚动剧情摘要</h4>
+        <pre class="tracking-box">{{ project.global_summary || '（暂无）' }}</pre>
       </section>
     </main>
   </div>
